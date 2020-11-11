@@ -36,6 +36,8 @@ class BOBase(object, metaclass=abc.ABCMeta):
         self.logger = self._get_logger(task_id)
         self.rng = np.random.RandomState(random_state)
 
+        self.benchmark_perfs = []   # recording benchmark perfs
+
     def run(self):
         raise NotImplementedError()
 

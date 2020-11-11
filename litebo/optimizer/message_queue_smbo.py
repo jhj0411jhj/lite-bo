@@ -82,6 +82,7 @@ class mqSMBO(BOBase):
                 result_num += 1
                 self.config_advisor.update_observation(observation)  # config, perf, trial_state
                 self.logger.info('Master: Get %d result: %.3f' % (result_num, observation[1]))
+                self.benchmark_perfs.append(observation[1])
 
     def sync_run(self):
         batch_num = (self.max_iterations + self.batch_size - 1) // self.batch_size
@@ -108,6 +109,7 @@ class mqSMBO(BOBase):
                 self.config_advisor.update_observation(observation)  # config, perf, trial_state
                 self.logger.info('Master: In the %d-th batch [%d], result is: %.3f'
                                  % (batch_id, result_num, observation[1]))
+                self.benchmark_perfs.append(observation[1])
                 if result_num == result_needed:
                     break
             batch_id += 1

@@ -80,4 +80,5 @@ class SMBO(BOBase):
 
         self.iteration_id += 1
         self.logger.info('In the %d-th iteration, the objective value: %.4f' % (self.iteration_id, perf))
+        self.benchmark_perfs.append(perf)
         return config, trial_state, perf, trial_info
