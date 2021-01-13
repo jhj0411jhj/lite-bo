@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import random
 
 import sys
 sys.path.insert(0, '.')
@@ -45,11 +46,13 @@ for i in range(inner_iter):
             break
         suggestion_list.append(suggestion)
 
+    random.shuffle(suggestion_list)     # test order
+
     for idx, suggestion in enumerate(suggestion_list):
         config, n_iter, total_iter, extra_info = suggestion
         perf = obj_func(*suggestion)
         observation = (config, perf, SUCCESS)
-        print('update (disorderly)', idx+1, perf)
+        print('update (disorderly)', idx+1, perf, config)
         advisor.update_mf_observation(observation)
 
 for i, obj in enumerate(advisor.incumbent_perfs):

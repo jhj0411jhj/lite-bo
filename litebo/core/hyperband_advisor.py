@@ -32,6 +32,7 @@ class HyperbandAdvisor(Advisor):
                          output_dir=output_dir,
                          task_id=task_id,
                          rng=rng)
+        self.method_name = 'Hyperband'
         self.R = R  # Maximum iterations per configuration
         self.eta = eta  # Define configuration downsampling rate (default = 3)
         self.logeta = lambda x: log(x) / log(self.eta)
@@ -42,8 +43,8 @@ class HyperbandAdvisor(Advisor):
 
         self.incumbent_configs = list()
         self.incumbent_perfs = list()
-        self.n_configs = 0                  # running configs num
-        self.n_observations = 0             # running observation got num
+        self.configs_num = 0                # running configs num
+        self.observations_num = 0           # running observation got num
         self.running_stats = OrderedDict()  # config : perf
         self.running_ret_val = []
         self.running_early_stops = []
@@ -68,10 +69,10 @@ class HyperbandAdvisor(Advisor):
         if not isinstance(perf, (int, float)):
             perf = perf[-1]     # todo what does this mean?
         self.running_stats[config] = perf
-        self.n_observations += 1
-        if self.n_observations == int(self.n_configs):   # todo just temporary!!!
+        self.observations_num += 1
+        if self.observations_num == self.configs_num:   # todo just temporary!!!
             self.running_ret_val = [dict(loss=p, ref_id=None) for p in self.running_stats.values()]
-            self.running_early_stops = [False] * int(self.n_configs)
+            self.running_early_stops = [False] * self.configs_num
             next(self.generator)    # update observation or the last iter is not completed
         # todo no use
         if trial_state == SUCCESS and perf < MAXINT:
@@ -108,24 +109,25 @@ class HyperbandAdvisor(Advisor):
                     # Run each of the n configs for <iterations>
                     # and keep best (n_configs / eta) configurations.
 
-                    self.n_configs = n * self.eta ** (-i)   # caution: covert to int when comparing
+                    n_configs = n * self.eta ** (-i)
                     n_iterations = r * self.eta ** (i)
                     n_iter = n_iterations
                     if last_run_num is not None and not self.restart_needed:
                         n_iter -= last_run_num
                     last_run_num = n_iterations
 
-                    self.logger.info("HB: %d configurations x %d iterations each"
-                                     % (int(self.n_configs), int(n_iterations)))
+                    self.logger.info("%s: %d configurations x %d iterations each"
+                                     % (self.method_name, int(n_configs), int(n_iterations)))
 
                     # reset running stats
                     self.running_stats.clear()
                     self.running_ret_val.clear()
                     self.running_early_stops.clear()
-                    self.n_observations = 0
+                    self.configs_num = len(T)   # Caution: not equal to (float)n_configs
+                    self.observations_num = 0
                     # send suggestions
                     if extra_info is None:
-                        extra_info = [None] * int(self.n_configs)
+                        extra_info = [None] * self.configs_num
                     for idx, t in enumerate(T):
                         self.running_stats[t] = None
                         self.logger.info("config %d sent: %s, %d, %d, %s"
@@ -142,34 +144,44 @@ class HyperbandAdvisor(Advisor):
                     val_losses = [item['loss'] for item in self.running_ret_val]
                     ref_list = [item['ref_id'] for item in self.running_ret_val]
 
+                    self.update_incumbent_before_reduce(T, val_losses, n_iterations)
+
                     # select a number of best configurations for the next loop
                     # filter out early stops, if any
                     indices = np.argsort(val_losses)
                     if len(T) == sum(self.running_early_stops):
                         break
                     if len(T) >= self.eta:
-                        T = [T[i] for i in indices if not self.running_early_stops[i]]
-                        extra_info = [ref_list[i] for i in indices if not self.running_early_stops[i]]
-                        reduced_num = int(self.n_configs / self.eta)
+                        indices = [i for i in indices if not self.running_early_stops[i]]
+                        T = [T[i] for i in indices]
+                        extra_info = [ref_list[i] for i in indices]
+                        reduced_num = int(n_configs / self.eta)
                         T = T[0:reduced_num]
                         extra_info = extra_info[0:reduced_num]
                     else:
-                        T = [T[indices[0]]]
+                        T = [T[indices[0]]]     # todo: confirm no filter early stops?
                         extra_info = [ref_list[indices[0]]]
-                    incumbent_loss = val_losses[indices[0]]
+                    val_losses = [val_losses[i] for i in indices][0:len(T)]  # update: sorted
+                    incumbent_loss = val_losses[0]
                     # self.add_stage_history(self.stage_id, min(self.global_incumbent, incumbent_loss)) # todo
                     # self.stage_id += 1
-                    self.update_incumbent(T, val_losses, indices, n_iterations)
+                    self.update_incumbent_after_reduce(T, val_losses, n_iterations)
                     yield   # update_mf_observation called
 
     def choose_next(self, num_config):
         # Sample n configurations uniformly.
         return self.sample_random_configs(num_config)
 
-    def update_incumbent(self, T, val_losses, indices, n_iterations):
-        if int(n_iterations) < self.R:
+    def update_incumbent_before_reduce(self, T, val_losses, n_iterations):
+        return
+
+    def update_incumbent_after_reduce(self, T, val_losses, n_iterations):
+        """
+        update: both T and val_losses are sorted
+        """
+        if int(n_iterations) < self.R:  # todo if skip_last?
             return
-        incumbent_loss = val_losses[indices[0]]
+        incumbent_loss = val_losses[0]
         if not np.isnan(incumbent_loss):
             self.incumbent_configs.append(T[0])
             self.incumbent_perfs.append(incumbent_loss)
